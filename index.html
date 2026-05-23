@@ -200,12 +200,14 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 <div class="card">
 <h2>📥 Export pour expert-comptable</h2>
 <p style="margin-bottom:1rem;color:#666;">Formats professionnels avec mise en forme améliorée</p>
+<button class="btn btn-success" onclick="preparerEnvoiComptable()" style="width:100%;padding:1.5rem;font-size:1.1rem;margin-bottom:1.5rem;">📧 Préparer l'envoi au comptable</button>
+<details style="margin-top:1rem;">
+<summary style="cursor:pointer;color:#0A7373;font-weight:600;margin-bottom:1rem;">Exports individuels</summary>
 <div class="export-grid">
-<button class="btn btn-primary" onclick="exportFECPro()">📑 FEC Professionnel</button>
-<button class="btn btn-primary" onclick="exportGrandLivrePro()">📚 Grand Livre Pro</button>
-<button class="btn btn-primary" onclick="exportBalancePro()">⚖️ Balance Pro</button>
-<button class="btn btn-primary" onclick="exportJustificatifs()">📦 ZIP justificatifs</button>
+<button class="btn btn-secondary" onclick="exportCompletComptable()">📊 Dossier complet (1 fichier)</button>
+<button class="btn btn-secondary" onclick="exportJustificatifs()">📦 ZIP justificatifs</button>
 </div>
+</details>
 </div>
 </div>
 </div>
@@ -219,6 +221,14 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 <div class="file-upload" onclick="document.getElementById('aiInput').click()">📸 Choisir une image</div>
 <input type="file" id="aiInput" accept="image/jpeg,image/png,image/jpg" style="display:none" onchange="analyzeWithAI()">
 <div id="aiResult"></div>
+</div>
+</div>
+
+<div id="emailModal" class="modal">
+<div class="modal-content" style="max-width:700px;">
+<span class="modal-close" onclick="closeEmailModal()">×</span>
+<h2>📧 Envoi au comptable</h2>
+<div id="emailContent"></div>
 </div>
 </div>
 
@@ -603,6 +613,227 @@ XLSX.utils.book_append_sheet(wb,ws,'Balance');
 const filename=currentExercice?`Balance_${currentExercice}.xlsx`:`Balance_${new Date().toISOString().split('T')[0]}.xlsx`;
 XLSX.writeFile(wb,filename);
 showMessage('✅ Balance professionnelle téléchargée','success');
+}
+
+function exportCompletComptable(){
+showMessage('⏳ Génération du dossier comptable...','warning');
+const wb=XLSX.utils.book_new();
+const periode=currentExercice?currentExercice.replace('_',' au '):`Période complète`;
+
+// ONGLET 1: RÉSUMÉ
+const resume=[
+['DOSSIER COMPTABLE IDEL'],
+[profile?`${profile.prenom} ${profile.nom}`:''],
+[profile?`SIRET: ${profile.siret}`:''],
+[`Période: ${periode}`],
+[],
+['SYNTHÈSE'],
+['Total Recettes',transactions.filter(t=>t.type==='recette').reduce((s,t)=>s+t.amount,0).toFixed(2)+' €'],
+['Total Dépenses',transactions.filter(t=>t.type==='depense').reduce((s,t)=>s+t.amount,0).toFixed(2)+' €'],
+['Balance',(transactions.filter(t=>t.type==='recette').reduce((s,t)=>s+t.amount,0)-transactions.filter(t=>t.type==='depense').reduce((s,t)=>s+t.amount,0)).toFixed(2)+' €'],
+['Nombre d\'opérations',transactions.length],
+[],
+['CONTENU DU DOSSIER'],
+['- Balance des comptes'],
+['- Grand Livre détaillé'],
+['- Fichier FEC (norme fiscale)'],
+['- Justificatifs (fichier ZIP séparé)']
+];
+const wsResume=XLSX.utils.aoa_to_sheet(resume);
+wsResume['!cols']=[{wch:30},{wch:20}];
+XLSX.utils.book_append_sheet(wb,wsResume,'Résumé');
+
+// ONGLET 2: BALANCE
+const dataBalance=[['N° Compte','Libellé','Total Débit','Total Crédit','Solde']];
+const comptes={};
+transactions.forEach(t=>{
+const compte=PLAN_COMPTABLE[t.category]||'708000';
+if(!comptes[compte])comptes[compte]={lib:t.category,debit:0,credit:0};
+if(t.type==='depense')comptes[compte].debit+=t.amount;
+else comptes[compte].credit+=t.amount;
+});
+Object.keys(comptes).sort().forEach(num=>{
+const c=comptes[num];
+const solde=c.credit-c.debit;
+dataBalance.push([num,c.lib,c.debit.toFixed(2),c.credit.toFixed(2),solde.toFixed(2)]);
+});
+const totD=Object.values(comptes).reduce((s,c)=>s+c.debit,0);
+const totC=Object.values(comptes).reduce((s,c)=>s+c.credit,0);
+dataBalance.push(['','TOTAUX',totD.toFixed(2),totC.toFixed(2),(totC-totD).toFixed(2)]);
+const wsBalance=XLSX.utils.aoa_to_sheet(dataBalance);
+wsBalance['!cols']=[{wch:12},{wch:30},{wch:18},{wch:18},{wch:18}];
+XLSX.utils.book_append_sheet(wb,wsBalance,'Balance');
+
+// ONGLETS 3+: GRAND LIVRE (un onglet par compte)
+const comptesGL={};
+transactions.forEach(t=>{
+const compte=PLAN_COMPTABLE[t.category]||'708000';
+if(!comptesGL[compte])comptesGL[compte]={lib:t.category,ops:[]};
+comptesGL[compte].ops.push({date:t.date,lib:t.description,debit:t.type==='depense'?t.amount:0,credit:t.type==='recette'?t.amount:0});
+});
+Object.keys(comptesGL).sort().forEach(num=>{
+const c=comptesGL[num];
+const data=[[`COMPTE ${num} - ${c.lib.toUpperCase()}`],[],['Date','Libellé','Débit','Crédit','Solde']];
+let solde=0;
+c.ops.forEach(op=>{
+solde+=op.credit-op.debit;
+data.push([op.date,op.lib,op.debit?op.debit.toFixed(2):'',op.credit?op.credit.toFixed(2):'',solde.toFixed(2)]);
+});
+data.push([],[`SOLDE FINAL: ${solde.toFixed(2)} €`]);
+const ws=XLSX.utils.aoa_to_sheet(data);
+ws['!cols']=[{wch:12},{wch:40},{wch:15},{wch:15},{wch:15}];
+XLSX.utils.book_append_sheet(wb,ws,`GL_${num}`.substring(0,31));
+});
+
+// ONGLET FINAL: FEC
+const dataFEC=[['JournalCode','JournalLib','EcritureNum','EcritureDate','CompteNum','CompteLib','CompAuxNum','CompAuxLib','PieceRef','PieceDate','EcritureLib','Debit','Credit','EcritureLet','DateLet','ValidDate','Montantdevise','Idevise']];
+transactions.forEach((t,i)=>{
+const compte=PLAN_COMPTABLE[t.category]||'708000';
+const montant=t.amount.toFixed(2);
+const date=t.date.replace(/-/g,'');
+if(t.type==='recette'){
+dataFEC.push(['VE','Ventes',i+1,date,compte,t.category,'','',t.id,date,t.description,montant,'0','','','','','']);
+dataFEC.push(['VE','Ventes',i+1,date,'411000','Clients','','',t.id,date,t.description,'0',montant,'','','','','']);
+}else{
+dataFEC.push(['AC','Achats',i+1,date,compte,t.category,'','',t.id,date,t.description,montant,'0','','','','','']);
+dataFEC.push(['AC','Achats',i+1,date,'401000','Fournisseurs','','',t.id,date,t.description,'0',montant,'','','','','']);
+}
+});
+const wsFEC=XLSX.utils.aoa_to_sheet(dataFEC);
+wsFEC['!cols']=[{wch:10},{wch:15},{wch:10},{wch:10},{wch:10},{wch:25},{wch:10},{wch:15},{wch:15},{wch:10},{wch:30},{wch:12},{wch:12},{wch:5},{wch:10},{wch:10},{wch:10},{wch:5}];
+XLSX.utils.book_append_sheet(wb,wsFEC,'FEC');
+
+const filename=currentExercice?`Comptabilite_${currentExercice}.xlsx`:`Comptabilite_${new Date().toISOString().split('T')[0]}.xlsx`;
+XLSX.writeFile(wb,filename);
+showMessage('✅ Dossier comptable complet téléchargé','success');
+return filename;
+}
+
+async function preparerEnvoiComptable(){
+showMessage('⏳ Préparation de l\'envoi...','warning');
+try{
+// Générer le fichier Excel
+const excelFilename=exportCompletComptable();
+
+// Générer le ZIP (en arrière-plan)
+const zipGenerated=await generateZipInBackground();
+
+// Préparer l'email
+const periode=currentExercice?currentExercice.replace('_',' au '):`toute la période`;
+const nom=profile?`${profile.prenom} ${profile.nom}`:'';
+const siret=profile?profile.siret:'';
+
+const emailBody=`Bonjour,
+
+Veuillez trouver ci-joint les documents comptables pour ${periode}.
+
+DOCUMENTS JOINTS :
+✅ ${excelFilename} - Dossier comptable complet
+   (Balance + Grand Livre + FEC)
+✅ Justificatifs_${currentExercice||'complet'}.zip - Toutes les pièces justificatives
+
+DÉTAILS :
+- Professionnel : ${nom}
+- SIRET : ${siret}
+- Période : ${periode}
+- Nombre d'opérations : ${transactions.length}
+
+Les fichiers sont prêts à être joints à cet email.
+
+Cordialement,
+${nom}`;
+
+const emailSubject=`Comptabilité IDEL - ${periode}`;
+
+// Afficher le modal avec l'email pré-rempli
+document.getElementById('emailContent').innerHTML=`
+<div style="background:#f9f9f9;padding:1rem;border-radius:8px;margin-bottom:1rem;">
+<p style="margin-bottom:0.5rem;"><strong>📎 Fichiers générés :</strong></p>
+<p style="margin:0.25rem 0;color:#34A853;">✅ ${excelFilename}</p>
+${zipGenerated?'<p style="margin:0.25rem 0;color:#34A853;">✅ Justificatifs_'+(currentExercice||'complet')+'.zip</p>':'<p style="margin:0.25rem 0;color:#F28B82;">⏳ ZIP en cours de génération...</p>'}
+</div>
+
+<div style="margin-bottom:1rem;">
+<label style="font-weight:600;display:block;margin-bottom:0.5rem;">Destinataire :</label>
+<input type="email" id="emailTo" placeholder="comptable@exemple.fr" style="width:100%;">
+</div>
+
+<div style="margin-bottom:1rem;">
+<label style="font-weight:600;display:block;margin-bottom:0.5rem;">Sujet :</label>
+<input type="text" id="emailSubject" value="${emailSubject}" style="width:100%;">
+</div>
+
+<div style="margin-bottom:1rem;">
+<label style="font-weight:600;display:block;margin-bottom:0.5rem;">Message :</label>
+<textarea id="emailBody" rows="12" style="width:100%;font-family:monospace;font-size:0.9rem;">${emailBody}</textarea>
+</div>
+
+<div style="background:#fff3cd;padding:1rem;border-radius:8px;margin-bottom:1rem;">
+<p style="margin:0;"><strong>⚠️ Important :</strong> Les fichiers ont été téléchargés. Vous devez les joindre manuellement à votre email.</p>
+</div>
+
+<button class="btn btn-primary" onclick="ouvrirEmail()" style="width:100%;">📧 Ouvrir mon client email</button>
+<button class="btn btn-secondary" onclick="copierEmail()" style="width:100%;margin-top:0.5rem;">📋 Copier le message</button>
+`;
+
+document.getElementById('emailModal').classList.add('show');
+showMessage('✅ Email préparé ! Joignez les fichiers téléchargés.','success');
+}catch(error){
+showMessage('❌ '+error.message,'error');
+}
+}
+
+async function generateZipInBackground(){
+try{
+const transWithFiles=transactions.filter(t=>t.has_attachments);
+if(transWithFiles.length===0)return false;
+const transIds=transWithFiles.map(t=>t.id);
+const allAttachments=await api('attachments?select=*');
+const attachments=allAttachments.filter(att=>transIds.includes(att.transaction_id));
+if(!attachments||attachments.length===0)return false;
+const zip=new JSZip();
+let added=0;
+for(const att of attachments){
+try{
+const url=`${SUPABASE_URL}/storage/v1/object/public/justificatifs/${att.storage_path}`;
+const response=await fetch(url);
+if(response.ok){
+const blob=await response.blob();
+zip.file(att.file_name,blob);
+added++;
+}
+}catch(err){console.error(err)}
+}
+if(added===0)return false;
+const content=await zip.generateAsync({type:'blob'});
+const link=document.createElement('a');
+link.href=URL.createObjectURL(content);
+const filename=currentExercice?`Justificatifs_${currentExercice}.zip`:`Justificatifs_${new Date().toISOString().split('T')[0]}.zip`;
+link.download=filename;
+link.click();
+return true;
+}catch(error){
+console.error(error);
+return false;
+}
+}
+
+function ouvrirEmail(){
+const to=document.getElementById('emailTo').value;
+const subject=encodeURIComponent(document.getElementById('emailSubject').value);
+const body=encodeURIComponent(document.getElementById('emailBody').value);
+window.location.href=`mailto:${to}?subject=${subject}&body=${body}`;
+}
+
+function copierEmail(){
+const text=document.getElementById('emailBody').value;
+navigator.clipboard.writeText(text).then(()=>{
+showMessage('✅ Message copié !','success');
+});
+}
+
+function closeEmailModal(){
+document.getElementById('emailModal').classList.remove('show');
 }
 
 async function exportJustificatifs(){

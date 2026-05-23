@@ -90,6 +90,14 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 <div class="form-row"><input type="text" id="adeli" placeholder="ADELI"><input type="text" id="num_urssaf" placeholder="N° URSSAF"></div>
 <input type="text" id="adresse" placeholder="Adresse">
 <div class="form-row"><input type="text" id="code_postal" placeholder="Code postal"><input type="text" id="ville" placeholder="Ville"></div>
+<div class="form-row"><input type="tel" id="telephone" placeholder="Téléphone (06...)"><input type="email" id="email" placeholder="Email professionnel"></div>
+<button class="btn btn-primary" onclick="saveProfile()">💾 Enregistrer</button>
+</div>
+<div class="card">
+<h2>👨‍💼 Expert-comptable</h2>
+<input type="text" id="comptable_cabinet" placeholder="Nom du cabinet">
+<input type="text" id="comptable_adresse" placeholder="Adresse du cabinet">
+<div class="form-row"><input type="tel" id="comptable_tel" placeholder="Téléphone"><input type="email" id="comptable_email" placeholder="Email"></div>
 <button class="btn btn-primary" onclick="saveProfile()">💾 Enregistrer</button>
 </div>
 <div class="card">
@@ -304,7 +312,7 @@ updateStats();
 }
 
 async function saveProfile(){
-const data={nom:document.getElementById('nom').value,prenom:document.getElementById('prenom').value,siret:document.getElementById('siret').value,rpps:document.getElementById('rpps').value,adeli:document.getElementById('adeli').value,num_urssaf:document.getElementById('num_urssaf').value,adresse:document.getElementById('adresse').value,code_postal:document.getElementById('code_postal').value,ville:document.getElementById('ville').value};
+const data={nom:document.getElementById('nom').value,prenom:document.getElementById('prenom').value,siret:document.getElementById('siret').value,rpps:document.getElementById('rpps').value,adeli:document.getElementById('adeli').value,num_urssaf:document.getElementById('num_urssaf').value,adresse:document.getElementById('adresse').value,code_postal:document.getElementById('code_postal').value,ville:document.getElementById('ville').value,telephone:document.getElementById('telephone').value,email:document.getElementById('email').value,comptable_cabinet:document.getElementById('comptable_cabinet').value,comptable_adresse:document.getElementById('comptable_adresse').value,comptable_tel:document.getElementById('comptable_tel').value,comptable_email:document.getElementById('comptable_email').value};
 try{
 if(profile){await api(`profile?id=eq.${profile.id}`,{method:'PATCH',body:JSON.stringify(data)})}
 else{profile=(await api('profile',{method:'POST',body:JSON.stringify(data)}))[0]}
@@ -722,6 +730,8 @@ const zipGenerated=await generateZipInBackground();
 const periode=currentExercice?currentExercice.replace('_',' au '):`toute la période`;
 const nom=profile?`${profile.prenom} ${profile.nom}`:'';
 const siret=profile?profile.siret:'';
+const emailComptable=profile?.comptable_email||'';
+const cabinetComptable=profile?.comptable_cabinet||'Cabinet comptable';
 
 const emailBody=`Bonjour,
 
@@ -755,17 +765,17 @@ ${zipGenerated?'<p style="margin:0.25rem 0;color:#34A853;">✅ Justificatifs_'+(
 
 <div style="margin-bottom:1rem;">
 <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Destinataire :</label>
-<input type="email" id="emailTo" placeholder="comptable@exemple.fr" style="width:100%;">
+<input type="email" id="emailTo" value="${emailComptable}" placeholder="comptable@exemple.fr" style="width:100%;padding:0.75rem;border:1px solid #ddd;border-radius:8px;">
 </div>
 
 <div style="margin-bottom:1rem;">
 <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Sujet :</label>
-<input type="text" id="emailSubject" value="${emailSubject}" style="width:100%;">
+<input type="text" id="emailSubject" value="${emailSubject}" style="width:100%;padding:0.75rem;border:1px solid #ddd;border-radius:8px;">
 </div>
 
 <div style="margin-bottom:1rem;">
 <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Message :</label>
-<textarea id="emailBody" rows="12" style="width:100%;font-family:monospace;font-size:0.9rem;">${emailBody}</textarea>
+<textarea id="emailBody" rows="12" style="width:100%;font-family:monospace;font-size:0.9rem;padding:0.75rem;border:1px solid #ddd;border-radius:8px;">${emailBody}</textarea>
 </div>
 
 <div style="background:#fff3cd;padding:1rem;border-radius:8px;margin-bottom:1rem;">

@@ -14,7 +14,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .header{background:linear-gradient(135deg,#0A7373,#0D9494);color:white;padding:1.5rem;box-shadow:0 2px 8px rgba(0,0,0,0.1);position:sticky;top:0;z-index:100}
 .header h1{font-size:1.5rem;margin-bottom:0.5rem}
 .sync{font-size:0.85rem;opacity:0.9}
-.container{max-width:1000px;margin:0 auto;padding:1rem}
+.container{max-width:1000px;margin:0 auto;padding:1rem;padding-bottom:3rem}
 .card{background:white;border-radius:12px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
 .card h2{color:#0A7373;margin-bottom:1rem;font-size:1.2rem}
 .btn{padding:0.75rem 1.5rem;border:none;border-radius:8px;font-weight:600;cursor:pointer;transition:0.2s;font-size:0.95rem;margin:0.25rem}
@@ -55,6 +55,7 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 .modal.show{display:flex}
 .modal-content{background:white;border-radius:12px;padding:2rem;max-width:500px;width:90%;max-height:80vh;overflow-y:auto}
 .modal-close{float:right;font-size:1.5rem;cursor:pointer;color:#999}
+.chart-container{height:250px;margin-bottom:1rem}
 </style>
 </head>
 <body>
@@ -73,7 +74,6 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 <button class="tab" onclick="showTab('stats')">📊 Statistiques</button>
 </div>
 
-<!-- TAB PROFIL -->
 <div id="tab-profil">
 <div class="card">
 <h2>👤 Informations professionnelles</h2>
@@ -94,7 +94,6 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 </div>
 </div>
 
-<!-- TAB OPERATIONS -->
 <div id="tab-operations" class="hidden">
 <div class="ai-scan">
 <h3>🤖 Scan intelligent avec IA</h3>
@@ -120,7 +119,6 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 </div>
 </div>
 
-<!-- TAB DOCUMENTS -->
 <div id="tab-documents" class="hidden">
 <div class="card">
 <h2>📑 Documents sociaux</h2>
@@ -140,14 +138,16 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 </div>
 </div>
 
-<!-- TAB STATS -->
 <div id="tab-stats" class="hidden">
 <div class="stats">
 <div class="stat-card"><div class="stat-label">Total Recettes</div><div class="stat-value" id="statRecettes">0€</div></div>
 <div class="stat-card"><div class="stat-label">Total Dépenses</div><div class="stat-value" id="statDepenses">0€</div></div>
 <div class="stat-card"><div class="stat-label">Balance</div><div class="stat-value" id="statBalance">0€</div></div>
 </div>
-<div class="card"><h2>📊 Graphique mensuel</h2><canvas id="chart" height="100"></canvas></div>
+<div class="card">
+<h2>📊 Graphique mensuel</h2>
+<div class="chart-container"><canvas id="chart"></canvas></div>
+</div>
 <div class="card">
 <h2>📥 Export pour comptable</h2>
 <button class="btn btn-primary" onclick="exportExcel()">📊 Télécharger Excel</button>
@@ -157,14 +157,13 @@ input,select,textarea{width:100%;padding:0.75rem;border:1px solid #ddd;border-ra
 </div>
 </div>
 
-<!-- MODAL AI SCAN -->
 <div id="aiModal" class="modal">
 <div class="modal-content">
 <span class="modal-close" onclick="closeAIScan()">×</span>
 <h2>🤖 Scan intelligent</h2>
-<p style="margin:1rem 0;">Prenez une photo de votre facture ou uploadez un PDF</p>
-<div class="file-upload" onclick="document.getElementById('aiInput').click()">📸 Choisir une image/PDF</div>
-<input type="file" id="aiInput" accept="image/*,application/pdf" style="display:none" onchange="analyzeWithAI()">
+<p style="margin:1rem 0;">Prenez une photo de votre facture (JPG/PNG uniquement pour le moment)</p>
+<div class="file-upload" onclick="document.getElementById('aiInput').click()">📸 Choisir une image</div>
+<input type="file" id="aiInput" accept="image/jpeg,image/png,image/jpg" style="display:none" onchange="analyzeWithAI()">
 <div id="aiResult"></div>
 </div>
 </div>
@@ -312,7 +311,7 @@ else months[month].depenses+=t.amount;
 const labels=Object.keys(months).sort();
 const recettes=labels.map(m=>months[m].recettes);
 const depenses=labels.map(m=>months[m].depenses);
-window.myChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'Recettes',data:recettes,backgroundColor:'#34A853'},{label:'Dépenses',data:depenses,backgroundColor:'#F28B82'}]},options:{responsive:true,maintainAspectRatio:false}});
+window.myChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'Recettes',data:recettes,backgroundColor:'#34A853'},{label:'Dépenses',data:depenses,backgroundColor:'#F28B82'}]},options:{responsive:true,maintainAspectRatio:true}});
 }
 
 function exportExcel(){
@@ -329,7 +328,7 @@ showMessage('⏳ Préparation du ZIP...','warning');
 try{
 const attachments=await api('attachments?select=*');
 if(!attachments||attachments.length===0){
-showMessage('❌ Aucun justificatif à exporter','error');
+showMessage('❌ Aucun justificatif','error');
 return;
 }
 const zip=new JSZip();
@@ -348,24 +347,29 @@ showMessage('✅ ZIP téléchargé !','success');
 }
 
 function openAIScan(){document.getElementById('aiModal').classList.add('show')}
-function closeAIScan(){document.getElementById('aiModal').classList.remove('show')}
+function closeAIScan(){document.getElementById('aiModal').classList.remove('show');document.getElementById('aiResult').innerHTML=''}
 
 async function analyzeWithAI(){
 const file=document.getElementById('aiInput').files[0];
 if(!file)return;
+if(!file.type.startsWith('image/')){
+showMessage('❌ Images uniquement (JPG/PNG)','error');
+return;
+}
 document.getElementById('aiResult').innerHTML='<p>🤖 Analyse en cours...</p>';
 try{
 const reader=new FileReader();
 reader.onload=async(e)=>{
-const base64=e.target.result;
+try{
+const base64=e.target.result.split(',')[1];
 const response=await fetch('https://api.anthropic.com/v1/messages',{
 method:'POST',
-headers:{'Content-Type':'application/json'},
+headers:{'Content-Type':'application/json','x-api-key':'VOTRE_CLE_API'},
 body:JSON.stringify({
 model:'claude-sonnet-4-20250514',
 max_tokens:1000,
 messages:[{role:'user',content:[
-{type:'image',source:{type:'base64',media_type:file.type,data:base64.split(',')[1]}},
+{type:'image',source:{type:'base64',media_type:file.type,data:base64}},
 {type:'text',text:'Analyse cette facture et extrait: date (format YYYY-MM-DD), montant TTC, catégorie (Carburant/Fournitures médicales/Téléphone/Assurance/Formation/Comptable/Entretien véhicule/Loyer/Autres), description. Réponds UNIQUEMENT en JSON: {"date":"","amount":0,"category":"","description":""}'}
 ]}]
 })
@@ -381,6 +385,9 @@ document.getElementById('description').value=result.description;
 closeAIScan();
 showTab('operations');
 showMessage('✅ Facture analysée ! Vérifiez et ajoutez.','success');
+}catch(err){
+document.getElementById('aiResult').innerHTML=`<div class="error">❌ ${err.message}</div>`;
+}
 };
 reader.readAsDataURL(file);
 }catch(error){

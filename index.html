@@ -608,38 +608,75 @@ showMessage('✅ Balance professionnelle téléchargée','success');
 async function exportJustificatifs(){
 showMessage('⏳ Préparation du ZIP...','warning');
 try{
-const transIds=transactions.filter(t=>t.has_attachments).map(t=>t.id);
-if(transIds.length===0){
+console.log('=== DEBUG EXPORT ZIP ===');
+console.log('1. Transactions affichées:',transactions.length);
+console.log('2. Transactions complètes:',transactions.map(t=>({id:t.id,date:t.date,desc:t.description,hasFiles:t.has_attachments})));
+
+const transWithFiles=transactions.filter(t=>t.has_attachments);
+console.log('3. Transactions AVEC fichiers:',transWithFiles.length,transWithFiles);
+
+if(transWithFiles.length===0){
 showMessage('❌ Aucune opération avec justificatif dans cette période','error');
+console.log('ERREUR: Aucune transaction n a has_attachments=true');
 return;
 }
+
+const transIds=transWithFiles.map(t=>t.id);
+console.log('4. IDs des transactions:',transIds);
+
 const allAttachments=await api('attachments?select=*');
+console.log('5. TOUS les attachments en base:',allAttachments.length,allAttachments);
+
 const attachments=allAttachments.filter(att=>transIds.includes(att.transaction_id));
+console.log('6. Attachments filtrés pour cette période:',attachments.length,attachments);
+
 if(!attachments||attachments.length===0){
 showMessage('❌ Aucun fichier trouvé pour cette période','error');
+console.log('ERREUR: Attachments existent mais transaction_id ne correspond pas');
 return;
 }
+
 const zip=new JSZip();
+let added=0;
 for(const att of attachments){
+console.log('7. Téléchargement:',att.file_name,'depuis',att.storage_path);
 try{
-const response=await fetch(`${SUPABASE_URL}/storage/v1/object/public/justificatifs/${att.storage_path}`);
+const url=`${SUPABASE_URL}/storage/v1/object/public/justificatifs/${att.storage_path}`;
+console.log('URL:',url);
+const response=await fetch(url);
+console.log('Response status:',response.status,response.ok);
 if(response.ok){
 const blob=await response.blob();
+console.log('Blob size:',blob.size);
 zip.file(att.file_name,blob);
+added++;
+console.log('✓ Fichier ajouté:',att.file_name);
+}else{
+console.log('✗ Erreur HTTP:',response.status);
 }
 }catch(err){
-console.error('Erreur fichier:',att.file_name,err);
+console.error('✗ Erreur téléchargement:',att.file_name,err);
 }
 }
+
+console.log('8. Total fichiers ajoutés au ZIP:',added);
+
+if(added===0){
+showMessage('❌ Aucun fichier n a pu être téléchargé','error');
+return;
+}
+
 const content=await zip.generateAsync({type:'blob'});
+console.log('9. ZIP généré, taille:',content.size);
 const link=document.createElement('a');
 link.href=URL.createObjectURL(content);
 const filename=currentExercice?`Justificatifs_${currentExercice}.zip`:`Justificatifs_${new Date().toISOString().split('T')[0]}.zip`;
 link.download=filename;
 link.click();
-showMessage(`✅ ZIP téléchargé (${attachments.length} fichiers)`,'success');
+showMessage(`✅ ZIP téléchargé (${added} fichiers sur ${attachments.length})`,'success');
+console.log('=== FIN DEBUG ===');
 }catch(error){
-console.error('Erreur ZIP:',error);
+console.error('ERREUR FATALE:',error);
 showMessage('❌ Erreur: '+error.message,'error');
 }
 }

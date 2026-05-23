@@ -608,8 +608,11 @@ showMessage('✅ Balance professionnelle téléchargée','success');
 async function exportJustificatifs(){
 showMessage('⏳ ZIP en cours...','warning');
 try{
-const attachments=await api('attachments?select=*');
-if(!attachments||attachments.length===0){showMessage('❌ Aucun justificatif','error');return}
+const transIds=transactions.filter(t=>t.has_attachments).map(t=>t.id);
+if(transIds.length===0){showMessage('❌ Aucun justificatif pour cette période','error');return}
+const allAttachments=await api('attachments?select=*');
+const attachments=allAttachments.filter(att=>transIds.includes(att.transaction_id));
+if(!attachments||attachments.length===0){showMessage('❌ Aucun justificatif pour cette période','error');return}
 const zip=new JSZip();
 for(const att of attachments){
 const response=await fetch(`${SUPABASE_URL}/storage/v1/object/public/justificatifs/${att.storage_path}`);
@@ -622,7 +625,7 @@ link.href=URL.createObjectURL(content);
 const filename=currentExercice?`Justificatifs_${currentExercice}.zip`:`Justificatifs_${new Date().toISOString().split('T')[0]}.zip`;
 link.download=filename;
 link.click();
-showMessage('✅ ZIP téléchargé','success');
+showMessage('✅ ZIP téléchargé ('+attachments.length+' fichiers)','success');
 }catch(error){showMessage('❌ '+error.message,'error')}
 }
 

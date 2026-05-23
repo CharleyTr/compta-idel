@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Comptabilité IDEL Cloud</title>
+    
+    <!-- PWA -->
+    <meta name="description" content="Application comptabilité infirmière libérale cloud">
+    <meta name="theme-color" content="#0A7373">
+    <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQ29tcHRhIElERUwgQ2xvdWQiLCJzaG9ydF9uYW1lIjoiQ29tcHRhIElERUwiLCJzdGFydF91cmwiOiIuLyIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiNmZmZmZmYiLCJ0aGVtZV9jb2xvciI6IiMwQTczNzMifQ==">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect fill='%230A7373' width='100' height='100'/%3E%3Ctext y='70' x='50' text-anchor='middle' font-size='60' fill='white'%3E💼%3C/text%3E%3C/svg%3E">
+    
+    <!-- SheetJS -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #F5F7FA;
+            line-height: 1.5;
+        }
+        .header {
+            background: linear-gradient(135deg, #0A7373, #0D9494);
+            color: white;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        .sync { font-size: 0.85rem; opacity: 0.9; }
+        .container { max-width: 800px; margin: 0 auto; padding: 1rem; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary { background: #0A7373; color: white; }
+        .btn-primary:hover { background: #0D9494; }
+        .btn-secondary { background: #E8F5F5; color: #0A7373; }
+        input, select, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        .transaction {
+            border-left: 4px solid #0A7373;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+        .transaction.recette { border-left-color: #34A853; }
+        .transaction.depense { border-left-color: #F28B82; }
+        .hidden { display: none; }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        .error { background: #fee; color: #c33; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+        .success { background: #efe; color: #3c3; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💼 Comptabilité IDEL</h1>
+        <div class="sync" id="syncStatus">☁️ Synchronisation...</div>
+    </div>
+
+    <div class="container">
+        <div id="loading" class="loading">
+            <p>Connexion à Supabase...</p>
+        </div>
+
+        <div id="app" class="hidden">
+            <div id="messages"></div>
+            
+            <!-- Profil -->
+            <div class="card">
+                <h2>👤 Profil</h2>
+                <input type="text" id="nom" placeholder="Nom">
+                <input type="text" id="prenom" placeholder="Prénom">
+                <input type="text" id="siret" placeholder="SIRET">
+                <button class="btn btn-primary" onclick="saveProfile()">💾 Enregistrer</button>
+            </div>
+
+            <!-- Nouvelle opération -->
+            <div class="card">
+                <h2>➕ Nouvelle opération</h2>
+                <input type="date" id="date" value="">
+                <select id="type">
+                    <option value="recette">💚 Recette</option>
+                    <option value="depense">🔴 Dépense</option>
+                </select>
+                <input type="text" id="description" placeholder="Description">
+                <input type="number" id="amount" placeholder="Montant" step="0.01">
+                <button class="btn btn-primary" onclick="addTransaction()">✅ Ajouter</button>
+            </div>
+
+            <!-- Liste des opérations -->
+            <div class="card">
+                <h2>📋 Opérations</h2>
+                <div id="transactions"></div>
+            </div>
+
+            <!-- Export -->
+            <div class="card">
+                <h2>📊 Export</h2>
+                <button class="btn btn-secondary" onclick="exportExcel()">📥 Télécharger Excel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://hzwypmkhedplzrlsksqd.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6d3lwbWtoZWRwbHpybHNrc3FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MTE5ODEsImV4cCI6MjA5NTA4Nzk4MX0.e5XBfQSea3MmsOUFhWatEDww9b6wLAK7ybRdcv9dzEk';
+
+        let profile = null;
+        let transactions = [];
+
+        async function apiCall(endpoint, options = {}) {
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, {
+                ...options,
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation',
+                    ...options.headers
+                }
+            });
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+        }
+
+        async function init() {
+            try {
+                // Charger profil
+                const profiles = await apiCall('profile?select=*');
+                if (profiles.length > 0) {
+                    profile = profiles[0];
+                    document.getElementById('nom').value = profile.nom || '';
+                    document.getElementById('prenom').value = profile.prenom || '';
+                    document.getElementById('siret').value = profile.siret || '';
+                }
+
+                // Charger transactions
+                transactions = await apiCall('transactions?select=*&order=date.desc');
+                displayTransactions();
+
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('app').classList.remove('hidden');
+                showMessage('✅ Connecté à Supabase', 'success');
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `<div class="error">❌ ${error.message}</div>`;
+            }
+        }
+
+        async function saveProfile() {
+            const data = {
+                nom: document.getElementById('nom').value,
+                prenom: document.getElementById('prenom').value,
+                siret: document.getElementById('siret').value
+            };
+
+            try {
+                if (profile) {
+                    await apiCall(`profile?id=eq.${profile.id}`, { method: 'PATCH', body: JSON.stringify(data) });
+                } else {
+                    const result = await apiCall('profile', { method: 'POST', body: JSON.stringify(data) });
+                    profile = result[0];
+                }
+                showMessage('✅ Profil enregistré', 'success');
+            } catch (error) {
+                showMessage('❌ ' + error.message, 'error');
+            }
+        }
+
+        async function addTransaction() {
+            const data = {
+                date: document.getElementById('date').value,
+                type: document.getElementById('type').value,
+                description: document.getElementById('description').value,
+                amount: parseFloat(document.getElementById('amount').value),
+                category: 'Général',
+                payment_method: 'Virement'
+            };
+
+            try {
+                const result = await apiCall('transactions', { method: 'POST', body: JSON.stringify(data) });
+                transactions.unshift(result[0]);
+                displayTransactions();
+                document.getElementById('description').value = '';
+                document.getElementById('amount').value = '';
+                showMessage('✅ Opération ajoutée', 'success');
+            } catch (error) {
+                showMessage('❌ ' + error.message, 'error');
+            }
+        }
+
+        function displayTransactions() {
+            const html = transactions.map(t => `
+                <div class="transaction ${t.type}">
+                    <strong>${t.date}</strong> - ${t.description}<br>
+                    <span style="color: ${t.type === 'recette' ? '#34A853' : '#F28B82'}; font-weight: bold;">
+                        ${t.type === 'recette' ? '+' : '-'}${t.amount}€
+                    </span>
+                </div>
+            `).join('');
+            document.getElementById('transactions').innerHTML = html || '<p>Aucune opération</p>';
+        }
+
+        function exportExcel() {
+            const wb = XLSX.utils.book_new();
+            const data = [['Date', 'Type', 'Description', 'Montant']];
+            transactions.forEach(t => {
+                data.push([t.date, t.type, t.description, t.amount]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+            XLSX.writeFile(wb, `Comptabilite_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        function showMessage(msg, type) {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = msg;
+            document.getElementById('messages').appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+        init();
+    </script>
+</body>
+</html>
